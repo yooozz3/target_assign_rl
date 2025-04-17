@@ -1,4 +1,5 @@
 import json
+import time
 import random
 from typing import TYPE_CHECKING, List, Tuple
 
@@ -23,6 +24,7 @@ class EnhancedGeneticAlgorithm:
         self.prob_options = self.config.get("prob_options", [0.0, 0.2, 0.4, 0.6, 0.8])
         self.windows = self.config.get("windows", 4)
         self.individual = self.create_individual()
+        self.new_model_name = time.strftime("%Y%m%d_%H%M%S", time.localtime())
 
     def create_individual(self) -> List[float]:
         return [
@@ -72,16 +74,8 @@ class EnhancedGeneticAlgorithm:
         self, individual: List[float], p: List[float], x: List[int]
     ) -> float:
         allocation = self.allocate_food(individual, p)
-        expected_coverage = 0.0
-        for i in range(self.windows):
-            if x[i] == 1:
-                fi = allocation[i]
-                success_prob = 1 - ((1 - self.food_full) ** fi)
-                expected_coverage += success_prob
-        used_food = sum(allocation)
-        food_efficiency = used_food / self.food_supply
-        fitness = expected_coverage * 0.5 + food_efficiency * 0.5
-        return fitness
+        fitness = sum((ai - bi) ** 2 for ai, bi in zip(x, allocation))
+        return 1 / (1 + fitness)
 
     def tournament_selection(
         self, population: List[List[float]], fitness: List[float]
@@ -179,23 +173,46 @@ class EnhancedGeneticAlgorithm:
             population = next_population[: self.population_size]
 
         if model_path is not None:
-            self.save_model(best_individual, model_path)
+            self.save_model(population, model_path)
         else:
-            self.save_model(best_individual, "model_path.pkl")
+            self.save_model(population, "model_path.pkl")
             print("Model path not provided, best individual saved model_path.pkl.")
         print("Training completed with final best fitness:", best_fitness)
 
     def predict(self, p: List[float]) -> List[int]:
         return self.allocate_food(self.individual, p)
 
-    def update(self, p: List[float], x: List[int]):
-        new_population = self.initialize_population_from_best(self.individual)
+    def update(self, new_population, p: List[float], x: List[int]):
+        # new_population = self.initialize_population_from_best(self.individual)
         fitness = [self.evaluate_individual(ind, p, x) for ind in new_population]
         current_best_idx = np.argmax(fitness)
         current_fitness = fitness[current_best_idx]
         best_fitness = self.evaluate_individual(self.individual, p, x)
         if current_fitness > best_fitness:
             self.individual = new_population[current_best_idx].copy()
+            best_fitness = current_fitness
+            # best_allocate = self.allocate_food(self.individual, p)
+
+        selected = self.tournament_selection(new_population, fitness)
+        next_population = []
+        elite = sorted(zip(fitness, new_population), key=lambda x: -x[0])[
+            : self.elitism_count
+        ]
+        next_population.extend([e[1].copy() for e in elite])
+
+        while len(next_population) < self.population_size:
+            parents = random.sample(selected, 2)
+            child1, child2 = self.crossover(parents[0], parents[1])
+            child1 = self.mutate(child1)
+            child2 = self.mutate(child2)
+            next_population.append(child1)
+            if len(next_population) < self.population_size:
+                next_population.append(child2)
+
+        new_population = next_population[: self.population_size]
+
+        self.save_model(self.individual, f"{self.new_model_name}_GA_individual.json")
+        return new_population
 
     def initialize_population_from_best(self, best_individual):
         """
