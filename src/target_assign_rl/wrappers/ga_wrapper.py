@@ -50,6 +50,16 @@ class GeneticAlgoWrapper(gym.Wrapper):
         self.ga = EnhancedGeneticAlgorithm(self.ga_config)
         if self.ga_model is not None:
             self.ga.load_model(self.ga_model)
+        else:
+            self.ga_update = True
+
+        if self.ga_update:
+            if self.ga_model is None:
+                self.population = self.ga.create_individual()
+            else:
+                self.population = self.ga.initialize_population_from_best(
+                    self.ga.individual
+                )
 
     def reset(self, *, seed=None, options=None):
         self.GA_result = np.full(self.num_group, self.aec_env.max_drones)
@@ -71,7 +81,7 @@ class GeneticAlgoWrapper(gym.Wrapper):
                 * self.group_size
             ] = [self.high_level] * self.group_size
 
-        self.sum_threats_list = [
+        self.sum_threats_level = [
             sum(
                 self.aec_env.threat_levels[
                     i * self.group_size : (i + 1) * self.group_size
@@ -79,14 +89,13 @@ class GeneticAlgoWrapper(gym.Wrapper):
             )
             for i in range(self.num_group)
         ]
-
-        self.GA_result = self.ga.predict(self.sum_threats_list)
+        self.GA_result = self.ga.predict(self.sum_threats_level)
         obs = self._update_obs(obs)
         return obs, info
 
     def step(self, action):
         obs, reward, te, tr, info = super().step(action)
-        self.sum_actual_threat_list = [
+        self.sum_actual_threats = [
             sum(
                 self.aec_env.actual_threats[
                     i * self.group_size : (i + 1) * self.group_size
@@ -95,10 +104,12 @@ class GeneticAlgoWrapper(gym.Wrapper):
             for i in range(self.num_group)
         ]
         if self.ga_update:
-            self.ga.update(self.sum_threats_list, self.sum_actual_threat_list)
+            self.population = self.ga.update(
+                self.population, self.sum_threats_level, self.sum_actual_threats
+            )
 
         obs = self._update_obs(obs)
-        reward = self._update_reward(reward)
+        # reward = self._update_reward(reward)
         return obs, reward, te, tr, info
 
     def _update_mask(self, agent=None):
@@ -164,8 +175,8 @@ class GeneticAlgoWrapper(gym.Wrapper):
 if __name__ == "__main__":
     env = TaskAllocationEnv(dict(mask_obs=True, min_drones=20))
     config = dict(
-        ga_update=False,
-        ga_model="0324_enhanced_ga_model.json",
+        ga_update=True,
+        ga_model=r"0401_enhanced_ga_model.json",
         ga_config={
             "population_size": 100,
             "generations": 100,
@@ -179,6 +190,11 @@ if __name__ == "__main__":
         high_level_layer=7,
     )
     env = GeneticAlgoWrapper(env, config)
-    obs, info = env.reset()
-    print(obs, info)
+    # for i in range(100):
+    # print("episode:", i)
+
+    obs, _ = env.reset()
+    print(obs)
+    # print("ga_result", env.GA_result)
+
     print("Done")
