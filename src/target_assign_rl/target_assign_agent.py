@@ -12,20 +12,25 @@ class Agent:
     def reset():
         pass
 
-
 class RuleAgent(Agent):
     def __init__(self, num_threats=20):
         self.max_threats = num_threats
         self.current_allocation = np.zeros(num_threats)
         self.pre_allocation = None
         self.index = 0
+        self.pre_allocation = None
 
     def predict(self, state, action_mask=None):
-        threat_levels, pre_allocation, current_allocation = state.reshape([3, -1])
-        if not np.array_equal(self.pre_allocation, pre_allocation) or np.array_equal(
-            self.current_allocation, pre_allocation
+        if self.pre_allocation is None:
+            # threat_levels, pre_allocation, current_allocation = state.reshape([3, -1])
+            # self.threat_levels = state["observations"][: self.max_threats]
+            self.threat_levels = state[: self.max_threats]
+            self.pre_allocation=self.calculate_pre_allocation()
+
+        if not np.array_equal(self.pre_allocation, self.pre_allocation) or np.array_equal(
+            self.current_allocation, self.pre_allocation
         ):
-            self.reset(pre_allocation)
+            self.reset(self.pre_allocation)
 
         while self.index < self.max_threats:
             if self.current_allocation[self.index] < self.pre_allocation[self.index]:
@@ -37,6 +42,27 @@ class RuleAgent(Agent):
         self.pre_allocation = allocation.copy()
         self.current_allocation = np.zeros(self.max_threats)
         self.index = 0
+
+    def calculate_pre_allocation(self,num_drones=20):
+        pre_allocation = np.zeros(self.max_threats, dtype=int)
+        remaining_drones = num_drones
+
+        # Allocate one drone to each non-zero threat
+        for i, threat in enumerate(self.threat_levels):
+            if threat > 0 and remaining_drones > 0:
+                pre_allocation[i] += 1
+                remaining_drones -= 1
+
+        # Allocate remaining drones to highest threats
+        while remaining_drones > 0:
+            for i in range(self.max_threats):
+                if self.threat_levels[i] > 0 and remaining_drones > 0:
+                    pre_allocation[i] += 1
+                    remaining_drones -= 1
+                if remaining_drones == 0:
+                    break
+
+        return pre_allocation
 
 
 class RandomAgent(Agent):
